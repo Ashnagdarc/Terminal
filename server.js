@@ -1425,6 +1425,17 @@ function createServer(overrides = {}) {
     const isApiPath = pathname.startsWith('/api/');
 
     if (isApiPath) {
+      const cors = applyApiCors(req, res, config);
+      if (!cors.allowed) {
+        sendError(res, createAppError('CORS_ORIGIN_DENIED', 'CORS origin not allowed.', 403, false));
+        return;
+      }
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       if (!hasBasicAuth(req, config)) {
         res.setHeader('WWW-Authenticate', 'Basic realm="Ionized CLI API"');
         sendError(res, createAppError('AUTH_REQUIRED', 'Authentication required.', 401, false));

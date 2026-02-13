@@ -483,6 +483,10 @@ function applySoundSettings() {
 }
 
 function getEffectiveApiBaseUrl() {
+  const runtimeBase = normalizeApiBaseUrl(
+    window.__ION_API_BASE__ || document.querySelector('meta[name="ion-api-base"]')?.content || ''
+  );
+  if (runtimeBase) return runtimeBase;
   const settingBase = normalizeApiBaseUrl(userAiSettings.apiBaseUrl);
   if (settingBase) return settingBase;
   try {
