@@ -417,6 +417,7 @@ function loadUserAiSettings() {
       };
     }
     const parsed = JSON.parse(raw);
+    const storedApiBase = localStorage.getItem(API_BASE_URL_STORAGE_KEY) || '';
     return {
       provider: normalizeProvider(parsed?.provider),
       apiKey: String(parsed?.apiKey || '').trim(),
@@ -426,7 +427,7 @@ function loadUserAiSettings() {
       soundMuted: normalizeSoundMuted(parsed?.soundMuted),
       soundVolume: normalizeSoundVolume(parsed?.soundVolume),
       postMode: normalizePostMode(parsed?.postMode),
-      apiBaseUrl: normalizeApiBaseUrl(parsed?.apiBaseUrl)
+      apiBaseUrl: normalizeApiBaseUrl(parsed?.apiBaseUrl || storedApiBase)
     };
   } catch (_err) {
     return {
@@ -1421,6 +1422,10 @@ async function showStartupGuidance() {
   if (!userAiSettings.provider || !userAiSettings.apiKey) {
     await ui.addEntry('To enable AI replies, run: key set perplexity <your_key>', 'bot', { animate: false });
     await ui.addEntry('Your key will stay saved in this browser after refresh.', 'bot', { animate: false });
+  }
+
+  if (!getEffectiveApiBaseUrl() && window.location.hostname.includes('netlify')) {
+    await ui.addEntry('Hosted frontend detected. Set backend endpoint: api set <https://your-backend.example.com>', 'bot', { animate: false });
   }
 }
 

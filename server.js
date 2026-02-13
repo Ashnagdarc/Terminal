@@ -30,6 +30,7 @@ const DEFAULT_CONFIG = {
   maxFetchedBytes: 1024 * 1024,
   maxFetchRedirects: 3,
   allowPrivateUrls: false,
+  corsAllowedOrigins: '',
   enableRateLimit: false,
   rateLimitWindowMs: 60_000,
   rateLimitMax: 120,
@@ -108,6 +109,7 @@ function loadConfig(overrides = {}) {
     maxFetchedBytes: toNumber(process.env.MAX_FETCHED_BYTES, undefined),
     maxFetchRedirects: toNumber(process.env.MAX_FETCH_REDIRECTS, undefined),
     allowPrivateUrls: process.env.ALLOW_PRIVATE_URLS,
+    corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS,
     enableRateLimit: process.env.ENABLE_RATE_LIMIT,
     rateLimitWindowMs: toNumber(process.env.RATE_LIMIT_WINDOW_MS, undefined),
     rateLimitMax: toNumber(process.env.RATE_LIMIT_MAX, undefined),
@@ -149,6 +151,10 @@ function loadConfig(overrides = {}) {
   merged.maxFetchedBytes = toNumber(merged.maxFetchedBytes, DEFAULT_CONFIG.maxFetchedBytes);
   merged.maxFetchRedirects = toNumber(merged.maxFetchRedirects, DEFAULT_CONFIG.maxFetchRedirects);
   merged.allowPrivateUrls = toBoolean(merged.allowPrivateUrls, DEFAULT_CONFIG.allowPrivateUrls);
+  merged.corsAllowedOrigins = String(merged.corsAllowedOrigins || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   merged.rateLimitWindowMs = toNumber(merged.rateLimitWindowMs, DEFAULT_CONFIG.rateLimitWindowMs);
   merged.rateLimitMax = toNumber(merged.rateLimitMax, DEFAULT_CONFIG.rateLimitMax);
   merged.trustProxy = toBoolean(merged.trustProxy, DEFAULT_CONFIG.trustProxy);
@@ -1356,6 +1362,45 @@ function safePathFromUrl(urlPath, publicDir) {
   const relative = pathname === '/' ? '/index.html' : pathname;
   const normalized = path.normalize(relative).replace(/^(\.\.[/\\])+/, '');
   return path.join(publicDir, normalized);
+}
+
+function isSameOriginApiRequest(req, origin) {
+  if (!origin) return false;
+  const host = sanitizeSingleHeaderValue(req.headers.host);
+  if (!host) return false;
+  try {
+    const parsed = new URL(origin);
+    return parsed.host === host;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function applyApiCors(req, res, config) {
+  const origin = sanitizeSingleHeaderValue(req.headers.origin);
+  if (!origin) {
+    return { allowed: true, applied: false };
+  }
+
+  if (isSameOriginApiRequest(req, origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  } else if (config.corsAllowedOrigins.includes('*')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (config.corsAllowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  } else {
+    return { allowed: false, applied: false };
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, x-ai-provider, x-ai-key, x-output-mode, x-show-sources, x-memory-enabled, x-memory-notes, x-memory-turns, x-session-id'
+  );
+  res.setHeader('Access-Control-Max-Age', '600');
+  return { allowed: true, applied: true };
 }
 
 function sendSSE(res, event, payload) {
