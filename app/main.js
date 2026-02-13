@@ -37,6 +37,7 @@ const USER_PINS_STORAGE_KEY = 'ion_phosphor_pins_v1';
 const USER_MEMORIES_STORAGE_KEY = 'ion_phosphor_memories_v1';
 const SESSION_TURNS_STORAGE_KEY = 'ion_phosphor_session_turns_v1';
 const SESSION_ID_STORAGE_KEY = 'ion_phosphor_session_id_v1';
+const API_BASE_URL_STORAGE_KEY = 'ion_phosphor_api_base_url_v1';
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bootStartMs = Date.now();
@@ -90,7 +91,8 @@ let userAiSettings = {
   memoryEnabled: true,
   soundMuted: false,
   soundVolume: 55,
-  postMode: 'full'
+  postMode: 'full',
+  apiBaseUrl: ''
 };
 let userPins = [];
 let userMemories = [];
@@ -148,6 +150,15 @@ function normalizePostMode(value) {
   const lower = String(value || '').trim().toLowerCase();
   if (lower === 'fast' || lower === 'full') return lower;
   return 'full';
+}
+
+function normalizeApiBaseUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (['same-origin', 'default', 'off', 'none', 'local'].includes(lower)) return '';
+  if (!/^https?:\/\//i.test(raw)) return '';
+  return raw.replace(/\/+$/, '');
 }
 
 function loadJsonArray(key, limit = 40) {
@@ -300,6 +311,7 @@ function getPaletteItems() {
     'sound volume 35',
     'post fast',
     'post full',
+    'api set https://your-backend.example.com',
     'metrics'
   ];
 }
@@ -400,7 +412,8 @@ function loadUserAiSettings() {
         memoryEnabled: true,
         soundMuted: false,
         soundVolume: 55,
-        postMode: 'full'
+        postMode: 'full',
+        apiBaseUrl: ''
       };
     }
     const parsed = JSON.parse(raw);
@@ -412,7 +425,8 @@ function loadUserAiSettings() {
       memoryEnabled: normalizeMemoryEnabled(parsed?.memoryEnabled),
       soundMuted: normalizeSoundMuted(parsed?.soundMuted),
       soundVolume: normalizeSoundVolume(parsed?.soundVolume),
-      postMode: normalizePostMode(parsed?.postMode)
+      postMode: normalizePostMode(parsed?.postMode),
+      apiBaseUrl: normalizeApiBaseUrl(parsed?.apiBaseUrl)
     };
   } catch (_err) {
     return {
@@ -423,7 +437,8 @@ function loadUserAiSettings() {
       memoryEnabled: true,
       soundMuted: false,
       soundVolume: 55,
-      postMode: 'full'
+      postMode: 'full',
+      apiBaseUrl: ''
     };
   }
 }
@@ -445,11 +460,17 @@ function saveUserAiSettings(next) {
     memoryEnabled: normalizeMemoryEnabled(next?.memoryEnabled),
     soundMuted: normalizeSoundMuted(next?.soundMuted),
     soundVolume: normalizeSoundVolume(next?.soundVolume),
-    postMode: normalizePostMode(next?.postMode)
+    postMode: normalizePostMode(next?.postMode),
+    apiBaseUrl: normalizeApiBaseUrl(next?.apiBaseUrl)
   };
   applySoundSettings();
   try {
     localStorage.setItem(USER_AI_STORAGE_KEY, JSON.stringify(userAiSettings));
+    if (userAiSettings.apiBaseUrl) {
+      localStorage.setItem(API_BASE_URL_STORAGE_KEY, userAiSettings.apiBaseUrl);
+    } else {
+      localStorage.removeItem(API_BASE_URL_STORAGE_KEY);
+    }
   } catch (_err) {
     // Ignore storage write failures (e.g. private mode); keep in-memory settings.
   }
@@ -458,6 +479,21 @@ function saveUserAiSettings(next) {
 function applySoundSettings() {
   audio.setVolume(userAiSettings.soundVolume / 100);
   audio.setMuted(userAiSettings.soundMuted);
+}
+
+function getEffectiveApiBaseUrl() {
+  const settingBase = normalizeApiBaseUrl(userAiSettings.apiBaseUrl);
+  if (settingBase) return settingBase;
+  try {
+    return normalizeApiBaseUrl(localStorage.getItem(API_BASE_URL_STORAGE_KEY) || '');
+  } catch (_err) {
+    return '';
+  }
+}
+
+function apiUrl(pathname) {
+  const base = getEffectiveApiBaseUrl();
+  return base ? `${base}${pathname}` : pathname;
 }
 
 function hasSeenOnboarding() {
@@ -581,7 +617,7 @@ function parseSSEEvent(block) {
 }
 
 async function callBackend(command, signal) {
-  const res = await fetch('/api/cli', {
+  const res = await fetch(apiUrl('/api/cli'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -600,7 +636,7 @@ async function callBackend(command, signal) {
 }
 
 async function fetchMetrics(signal) {
-  const res = await fetch('/api/metrics', {
+  const res = await fetch(apiUrl('/api/metrics'), {
     method: 'GET',
     headers: {
       ...buildAiHeaders()
@@ -616,7 +652,7 @@ async function fetchMetrics(signal) {
 }
 
 async function streamAsk(prompt, signal, onToken) {
-  const res = await fetch(`/api/ask/stream?prompt=${encodeURIComponent(prompt)}`, {
+  const res = await fetch(`${apiUrl('/api/ask/stream')}?prompt=${encodeURIComponent(prompt)}`, {
     method: 'GET',
     headers: {
       Accept: 'text/event-stream',
@@ -769,7 +805,7 @@ async function executeCommand(rawInput) {
   if (parsed.type === 'empty') return;
 
   if (parsed.type === 'help') {
-    await ui.addEntry('Available commands: help, clear, about, status, metrics, uptime, time, theme [classic|amber|ice], post <show|fast|full>, mode <brief|standard|deep>, sources <on|off>, memory <on|off|show>, remember <text>, memories, forget <index|all>, pin <text>, pins, unpin <index|all>, sound <show|mute|unmute|volume>, ask <prompt>, weather <location>, docs <topic>, code <task>, summarize-url <url>, key <show|set|clear|provider>, settings, cancel, retry');
+    await ui.addEntry('Available commands: help, clear, about, status, metrics, uptime, time, theme [classic|amber|ice], post <show|fast|full>, api <show|set|clear>, mode <brief|standard|deep>, sources <on|off>, memory <on|off|show>, remember <text>, memories, forget <index|all>, pin <text>, pins, unpin <index|all>, sound <show|mute|unmute|volume>, ask <prompt>, weather <location>, docs <topic>, code <task>, summarize-url <url>, key <show|set|clear|provider>, settings, cancel, retry');
     await ui.addEntry('First-time setup (per browser): key set perplexity <their_key>');
     await ui.addEntry('Then ask with: ask <prompt> (or just type your question). Ctrl+K opens command palette.');
     return;
@@ -994,6 +1030,31 @@ async function executeCommand(rawInput) {
     return;
   }
 
+  if (parsed.type === 'api') {
+    if (!parsed.action || parsed.action === 'show') {
+      const base = getEffectiveApiBaseUrl() || '(same-origin)';
+      await ui.addEntry(`API base is ${base} | Usage: api set <https://backend.example.com> | api clear`);
+      return;
+    }
+    if (parsed.action === 'set') {
+      const base = normalizeApiBaseUrl(parsed.value);
+      if (!base) {
+        await ui.addEntry('Usage: api set <https://backend.example.com>');
+        return;
+      }
+      saveUserAiSettings({ ...userAiSettings, apiBaseUrl: base });
+      await ui.addEntry(`API base set to ${base}`);
+      return;
+    }
+    if (parsed.action === 'clear') {
+      saveUserAiSettings({ ...userAiSettings, apiBaseUrl: '' });
+      await ui.addEntry('API base cleared. Using same-origin endpoints.');
+      return;
+    }
+    await ui.addEntry('Usage: api show | api set <https://backend.example.com> | api clear');
+    return;
+  }
+
   if (parsed.type === 'key') {
     if (parsed.action === 'help') {
       await ui.addEntry('Usage: key show | key set <openai|perplexity> <api_key> | key provider <openai|perplexity> | key clear');
@@ -1003,7 +1064,7 @@ async function executeCommand(rawInput) {
     if (parsed.action === 'show') {
       const providerText = userAiSettings.provider || '(not set)';
       const keyText = maskApiKey(userAiSettings.apiKey);
-      await ui.addEntry(`User key settings | provider: ${providerText} | key: ${keyText} | mode: ${normalizeMode(userAiSettings.mode)} | sources: ${userAiSettings.sources ? 'on' : 'off'} | memory: ${userAiSettings.memoryEnabled ? 'on' : 'off'} | sound: ${userAiSettings.soundMuted ? 'muted' : `${userAiSettings.soundVolume}%`} | post: ${normalizePostMode(userAiSettings.postMode)}`);
+      await ui.addEntry(`User key settings | provider: ${providerText} | key: ${keyText} | api: ${getEffectiveApiBaseUrl() || '(same-origin)'} | mode: ${normalizeMode(userAiSettings.mode)} | sources: ${userAiSettings.sources ? 'on' : 'off'} | memory: ${userAiSettings.memoryEnabled ? 'on' : 'off'} | sound: ${userAiSettings.soundMuted ? 'muted' : `${userAiSettings.soundVolume}%`} | post: ${normalizePostMode(userAiSettings.postMode)}`);
       return;
     }
 
@@ -1091,7 +1152,7 @@ async function executeCommand(rawInput) {
   if (parsed.type === 'settings') {
     const providerText = userAiSettings.provider || '(not set)';
     const keyText = maskApiKey(userAiSettings.apiKey);
-    await ui.addEntry(`Settings | provider: ${providerText} | key: ${keyText} | mode: ${normalizeMode(userAiSettings.mode)} | sources: ${userAiSettings.sources ? 'on' : 'off'} | memory: ${userAiSettings.memoryEnabled ? 'on' : 'off'} | sound: ${userAiSettings.soundMuted ? 'muted' : `${userAiSettings.soundVolume}%`} | post: ${normalizePostMode(userAiSettings.postMode)} | pins: ${userPins.length}`);
+    await ui.addEntry(`Settings | provider: ${providerText} | key: ${keyText} | api: ${getEffectiveApiBaseUrl() || '(same-origin)'} | mode: ${normalizeMode(userAiSettings.mode)} | sources: ${userAiSettings.sources ? 'on' : 'off'} | memory: ${userAiSettings.memoryEnabled ? 'on' : 'off'} | sound: ${userAiSettings.soundMuted ? 'muted' : `${userAiSettings.soundVolume}%`} | post: ${normalizePostMode(userAiSettings.postMode)} | pins: ${userPins.length}`);
     return;
   }
 
@@ -1329,7 +1390,7 @@ async function initSystem() {
 
 async function loadRuntimeConfig() {
   try {
-    const res = await fetch('/api/config');
+    const res = await fetch(apiUrl('/api/config'));
     const data = await res.json();
     if (data?.ok && data?.config) {
       applyTheme(data.config.defaultTheme || 'classic');

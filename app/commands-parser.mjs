@@ -22,6 +22,7 @@ export const COMMAND_LIST = [
   'unpin',
   'sound',
   'post',
+  'api',
   'mode',
   'sources',
   'settings',
@@ -93,6 +94,20 @@ export function parseCommand(rawInput) {
       args: rest,
       argText,
       value: (rest[0] || 'show').toLowerCase()
+    };
+  }
+
+  if (command === 'api') {
+    const action = (rest[0] || 'show').toLowerCase();
+    return {
+      type: 'api',
+      raw,
+      trimmed,
+      command,
+      args: rest,
+      argText,
+      action,
+      value: rest.slice(1).join(' ').trim()
     };
   }
 

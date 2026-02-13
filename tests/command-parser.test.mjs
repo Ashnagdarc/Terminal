@@ -59,6 +59,13 @@ test('parse post command', () => {
   assert.equal(parsed.value, 'fast');
 });
 
+test('parse api set command', () => {
+  const parsed = parseCommand('api set https://api.example.com');
+  assert.equal(parsed.type, 'api');
+  assert.equal(parsed.action, 'set');
+  assert.equal(parsed.value, 'https://api.example.com');
+});
+
 test('parse remember command', () => {
   const parsed = parseCommand('remember prefers concise answers');
   assert.equal(parsed.type, 'remember');
