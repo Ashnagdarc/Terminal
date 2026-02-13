@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stem CLI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=JetBrains+Mono:wght@300;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --phosphor-primary: #00ff41;
+            --phosphor-glow: rgba(0, 255, 65, 0.4);
+            --phosphor-dim: #003b00;
+            --bg-deep: #020202;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; cursor: crosshair; }
+
+        body {
+            background-color: var(--bg-deep);
+            color: var(--phosphor-primary);
+            font-family: 'JetBrains Mono', monospace;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            text-shadow: 0 0 8px var(--phosphor-glow);
+        }
+
+        .crt-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            z-index: 100;
+            pointer-events: none;
+            opacity: 0.8;
+        }
+
+        .crt-overlay::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: rgba(18, 16, 16, 0.1);
+            opacity: 0;
+            z-index: 101;
+            pointer-events: none;
+            animation: flicker 0.15s infinite;
+        }
+
+        .vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.8) 100%);
+            z-index: 99;
+            pointer-events: none;
+        }
+
+        header {
+            padding: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 10;
+            gap: 1rem;
+        }
+
+        .system-specs {
+            font-size: 0.75rem;
+            line-height: 1.4;
+            color: var(--phosphor-dim);
+            text-transform: uppercase;
+            text-align: right;
+        }
+
+        .brand {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.5rem;
+            letter-spacing: -1px;
+            border-left: 4px solid var(--phosphor-primary);
+            padding-left: 1rem;
+        }
+
+        main {
+            flex: 1;
+            padding: 0 4rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            scrollbar-width: none;
+            scroll-behavior: smooth;
+            z-index: 10;
+            min-width: 0;
+        }
+
+        main::-webkit-scrollbar { display: none; }
+
+        .log-entry {
+            max-width: 800px;
+            animation: cascadeIn 0.4s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .log-entry.system { color: var(--phosphor-dim); font-style: italic; }
+        .log-entry.user { color: #fff; text-shadow: 0 0 12px rgba(255, 255, 255, 0.4); }
+
+        .label {
+            font-weight: 700;
+            margin-right: 1rem;
+            opacity: 0.6;
+            font-size: 0.7rem;
+            vertical-align: middle;
+        }
+
+        .content {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+
+        .input-zone {
+            padding: 2rem 4rem 4rem 4rem;
+            display: flex;
+            align-items: center;
+            z-index: 10;
+            position: relative;
+        }
+
+        .prompt {
+            color: var(--phosphor-primary);
+            margin-right: 1rem;
+            font-weight: bold;
+        }
+
+        #cli-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--phosphor-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            width: 100%;
+            caret-color: var(--phosphor-primary);
+        }
+
+        .workspace {
+            flex: 1;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+            gap: 1.25rem;
+            padding-right: 1.25rem;
+        }
+
+        .side-panel {
+            z-index: 10;
+            border-left: 1px solid var(--phosphor-dim);
+            padding: 0 0.75rem 1rem 1rem;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        .panel-title {
+            font-size: 0.72rem;
+            color: var(--phosphor-dim);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin: 0.6rem 0;
+        }
+
+        .panel-block {
+            border: 1px solid rgba(0, 255, 65, 0.15);
+            background: rgba(0, 0, 0, 0.22);
+            padding: 0.6rem 0.65rem;
+            min-height: 70px;
+            margin-bottom: 1rem;
+        }
+
+        .panel-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .panel-list li {
+            font-size: 0.86rem;
+            line-height: 1.25;
+            color: var(--phosphor-primary);
+            word-break: break-word;
+            opacity: 0.92;
+        }
+
+        .panel-empty {
+            color: var(--phosphor-dim);
+            font-size: 0.8rem;
+        }
+
+        .palette {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(2px);
+            z-index: 1300;
+            display: none;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 9vh;
+        }
+
+        .palette.open {
+            display: flex;
+        }
+
+        .palette-card {
+            width: min(660px, 92vw);
+            border: 1px solid var(--phosphor-dim);
+            background: rgba(1, 8, 1, 0.96);
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+            padding: 0.75rem;
+        }
+
+        #palette-input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(0, 255, 65, 0.2);
+            color: var(--phosphor-primary);
+            padding: 0.58rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            outline: none;
+        }
+
+        #palette-list {
+            list-style: none;
+            margin-top: 0.6rem;
+            display: flex;
+            flex-direction: column;
+            max-height: 42vh;
+            overflow-y: auto;
+        }
+
+        #palette-list li {
+            padding: 0.5rem;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.08);
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        #palette-list li.active {
+            background: rgba(0, 255, 65, 0.15);
+        }
+
+        #slash-suggestions {
+            position: absolute;
+            left: 4rem;
+            right: 4rem;
+            bottom: calc(100% + 0.35rem);
+            border: 1px solid rgba(0, 255, 65, 0.2);
+            background: rgba(1, 10, 1, 0.95);
+            list-style: none;
+            display: none;
+            z-index: 40;
+            max-height: 170px;
+            overflow-y: auto;
+        }
+
+        #slash-suggestions.open {
+            display: block;
+        }
+
+        #slash-suggestions li {
+            padding: 0.5rem 0.65rem;
+            font-size: 0.88rem;
+            border-bottom: 1px solid rgba(0, 255, 65, 0.09);
+            cursor: pointer;
+        }
+
+        #slash-suggestions li:hover,
+        #slash-suggestions li.active {
+            background: rgba(0, 255, 65, 0.15);
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0.27861; }
+            5% { opacity: 0.34769; }
+            10% { opacity: 0.23604; }
+            15% { opacity: 0.90626; }
+            20% { opacity: 0.18128; }
+            100% { opacity: 0.2; }
+        }
+
+        @keyframes cascadeIn {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        #canvas-cascade {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.15;
+            filter: blur(1px);
+        }
+
+        #boot-screen {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1s ease;
+            padding: 1rem;
+        }
+
+        .boot-bios {
+            width: min(1040px, 94vw);
+            margin-bottom: 1rem;
+            border: 2px solid #9a9a9a;
+            box-shadow: inset 0 0 0 1px #d7d7d7;
+            padding: 0.9rem 1rem;
+            color: #c6c6c6;
+            background: rgba(0, 0, 0, 0.85);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            line-height: 1.35;
+            white-space: pre;
+            overflow: hidden;
+            min-height: 16.5rem;
+            text-shadow: none;
+        }
+
+        .boot-meter {
+            margin-top: 1rem;
+            width: min(420px, 92vw);
+            border: 1px solid var(--phosphor-dim);
+            height: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .boot-meter-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--phosphor-dim), var(--phosphor-primary));
+            box-shadow: 0 0 14px var(--phosphor-glow);
+            transition: width 0.15s ease;
+        }
+
+        .boot-percent {
+            width: min(420px, 92vw);
+            margin-top: 0.4rem;
+            font-size: 0.75rem;
+            color: var(--phosphor-dim);
+            text-align: right;
+        }
+
+        .btn-init {
+            margin-top: 2rem;
+            background: transparent;
+            border: 1px solid var(--phosphor-primary);
+            color: var(--phosphor-primary);
+            padding: 0.5rem 2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-init:hover { background: var(--phosphor-primary); color: #000; }
+
+        @media (pointer: coarse) {
+            * { cursor: auto; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            header {
+                padding: 1rem;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .system-specs {
+                text-align: left;
+                font-size: 0.7rem;
+            }
+
+            .brand {
+                font-size: 1.1rem;
+            }
+
+            main {
+                padding: 0 1rem;
+                gap: 1rem;
+            }
+
+            .workspace {
+                grid-template-columns: 1fr;
+                padding-right: 0;
+            }
+
+            .side-panel {
+                border-left: none;
+                border-top: 1px solid var(--phosphor-dim);
+                margin: 0 1rem;
+                padding: 0.8rem 0 0;
+                max-height: 32vh;
+            }
+
+            .content {
+                font-size: 1rem;
+                line-height: 1.5;
+            }
+
+            .boot-bios {
+                font-size: 0.55rem;
+                min-height: 13rem;
+                padding: 0.7rem 0.75rem;
+            }
+
+            .input-zone {
+                padding: 1rem 1rem 1.5rem 1rem;
+            }
+
+            #slash-suggestions {
+                left: 1rem;
+                right: 1rem;
+            }
+
+            #cli-input {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="boot-screen">
+        <pre class="boot-bios" id="boot-bios" aria-hidden="true"></pre>
+        <div class="boot-meter" aria-hidden="true">
+            <div class="boot-meter-fill" id="boot-meter-fill"></div>
+        </div>
+        <div class="boot-percent" id="boot-percent">0%</div>
+        <button class="btn-init" id="boot-init-btn">INITIALIZE BOOT SEQUENCE</button>
+    </div>
+
+    <div class="crt-overlay"></div>
+    <div class="vignette"></div>
+    <canvas id="canvas-cascade"></canvas>
+
+    <header>
+        <div class="brand">ION_PHOSPHOR / v.09.4</div>
+        <div class="system-specs">
+            CPU: 80486DX2 @ 66MHz<br>
+            MEM: 65536KB OK<br>
+            KERNEL: CASCADE_v1.0.4
+        </div>
+    </header>
+
+    <div class="workspace">
+        <main id="chat-log" aria-live="polite" aria-relevant="additions text">
+            <div class="log-entry system">
+                <span class="label">[INFO]</span>
+                <span class="content">Secure handshake established. Ionized phosphor stream active.</span>
+            </div>
+        </main>
+        <aside class="side-panel" id="side-panel" aria-label="Terminal side panel">
+            <div class="panel-title">Pinned Snippets</div>
+            <div class="panel-block">
+                <ul class="panel-list" id="pins-list"></ul>
+                <div class="panel-empty" id="pins-empty">No pins yet. Use: pin &lt;text&gt;</div>
+            </div>
+
+            <div class="panel-title">Sources</div>
+            <div class="panel-block">
+                <ul class="panel-list" id="sources-list"></ul>
+                <div class="panel-empty" id="sources-empty">No sources yet.</div>
+            </div>
+        </aside>
+    </div>
+    <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="false"></div>
+
+    <div class="input-zone">
+        <span class="prompt">&gt;</span>
+        <input type="text" id="cli-input" aria-label="Terminal command input" placeholder="Type help to get started" autofocus autocomplete="off" spellcheck="false">
+        <ul id="slash-suggestions" aria-label="Slash command suggestions"></ul>
+    </div>
+
+    <div id="command-palette" class="palette" aria-hidden="true">
+        <div class="palette-card">
+            <input id="palette-input" type="text" placeholder="Type to search commands, Enter to insert" autocomplete="off" />
+            <ul id="palette-list"></ul>
+        </div>
+    </div>
+
+    <script type="module" src="./app/main.js?v=20260213f"></script>
+</body>
+</html>
